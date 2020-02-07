@@ -76,8 +76,6 @@ const bool runMETResCorrection = false;
 const bool runYieldsOnly = false;
 // only running selected signal points to speed up
 const bool runFullSignalScan = false;
-// debug symbol, for printing exact event kinematics that passes
-const bool printPassedEvents = false;
 // switch to use the separate fine scan points in the corridor or combine them
 const bool combineCorridorScans = false;
 // fill the distribution of event weights
@@ -154,11 +152,11 @@ void StopLooper::SetSignalRegions() {
   createRangesHists(CRemuVec);
 
   testVec.emplace_back("testGeneral");
-  // testVec.emplace_back("testTopTagging");
   testVec.emplace_back("testCutflow");
 }
 
 bool StopLooper::PassingHLTriggers(const int type) {
+  // TODO: NanoAOD: update trigger names
   // if (type == 1) {
   //   switch (year_) {
   //     case 2016:
@@ -210,11 +208,6 @@ void StopLooper::looper(TChain* chain, string samplestr, string output_dir, int 
   cout << "[StopLooper::looper] creating output file: " << output_name << endl;  outfile_ = new TFile(output_name.Data(),"RECREATE") ;
   cout << "Complied with C++ standard: " << __cplusplus << endl;
 
-  if (printPassedEvents) ofile.open(output_dir+"/passEventList_"+samplestr+".txt");
-
-  // if (runResTopMVA)
-  //   resTopMVA = new ResolvedTopMVA("../StopCORE/TopTagger/resTop_xGBoost_v2.weights.xml", "BDT");
-
   outfile_ = new TFile(output_name.Data(), "RECREATE") ;
 
   // Combined 2016 (35.922/fb), 2017 (41.529/fb) and 2018 (59.740/fb) json,
@@ -231,11 +224,7 @@ void StopLooper::looper(TChain* chain, string samplestr, string output_dir, int 
   else if (samplestr.find("data_2018") == 0) datayear = 2018;
   else datayear = -1;
 
-  // TFile dummy( (output_dir+"/dummy.root").c_str(), "RECREATE" );
   SetSignalRegions();
-
-  // MET resolution stuff
-  // METCorrectionHandler metCorrector;
 
   int nDuplicates = 0;
   int nEvents = chain->GetEntries();
@@ -266,19 +255,13 @@ void StopLooper::looper(TChain* chain, string samplestr, string output_dir, int 
 
     TString dsname = "";  // FIXME: where to find dataset info?
 
-    // Find the stopbaby versions automatically from file path <-- FIXME: is this needed anymore?
-    // if (int i = fname.Index("_v"); i >= 0) samplever = fname(i+1, min(fname.Index("/",i),5)); // include subversions
-    // else if (fname.Contains("v24")) samplever = "v24";
-    // else cout << "[looper] >> Cannot find the sample version!" << endl;
-    // babyver = TString(samplever).ReplaceAll("v","").ReplaceAll("_",".").Atof();
-
     cout << "[StopLooper] >> Running on sample: " << dsname << endl;
     cout << "[StopLooper] >> Sample detected with year = " << year_ << " and version = " << samplever << " (" << babyver << ")" << endl;
 
     is_fastsim_ = fname.Contains("SMS") || fname.Contains("Signal");
     is_bkg_ = (!gconf.is_data && !is_fastsim_);
-    // if (dsname.Contains("Fast")) is_fastsim_ = true;
 
+    // Figure out for signal sample stop and LSP mass from dataset name
     if (int i = dsname.Index("mStop-"); i >= 0) mstop_ = TString(dsname(i+6, dsname.Index("_",i))).Atof();
     if (int i = dsname.Index("mLSP-"); i >= 0) mlsp_ = TString(dsname(i+5, dsname.Index("_",i))).Atof();
     if (!is_fastsim_ && mlsp_ > 0 && mstop_ > 0)
@@ -319,7 +302,7 @@ void StopLooper::looper(TChain* chain, string samplestr, string output_dir, int 
     if (nEventsTotal >= nEventsChain) continue;
     unsigned int nEventsTree = tree->GetEntriesFast();
     for (unsigned int evt = 0; evt < nEventsTree; ++evt) {
-      if (evt > 100) break;  // FIXME: debug
+      if (evt > 100) break;  // FIXME: debug only, to be removed
       // Read Tree
       if (nEventsTotal >= nEventsChain) continue;
       tree->LoadTree(evt);
@@ -335,8 +318,6 @@ void StopLooper::looper(TChain* chain, string samplestr, string output_dir, int 
         }
       }
 
-      // fillEfficiencyHistos(testVec[0], "filters");
-
       // Apply met filters
       bool passMETfilt = passesMETfilters(gconf.is_data);
       if (!passMETfilt) continue;
@@ -344,22 +325,15 @@ void StopLooper::looper(TChain* chain, string samplestr, string output_dir, int 
       // Require at least 1 good vertex
       if (PV_npvsGood() < 1) continue;
 
-      // Fill tirgger efficiency histos after the MET filters are applied
-      // fillEfficiencyHistos(testVec[0], "triggers");
-
-      // TODO: // Only consider events with nupt < 200 for the inclusive WNJetsToLNu samples
+      // TODO: low priority // Only consider events with nupt < 200 for the inclusive WNJetsToLNu samples
       // if (dsname.BeginsWith("/W") && dsname.Contains("JetsToLNu") && !dsname.Contains("NuPt-200") && nupt() > 200) continue;
 
-      // mstop_ = 1200; mlsp_ = 1; 
+      // Fill in counter hist for signal points
       if (is_fastsim_) {
-        // plot2d("h2d_signal_masspts", mass_stop(), mass_lsp(), 1, SRVec.at(0).histMap, ";M_{stop} [GeV]; M_{lsp} [GeV]", 320, 100, 2100, 120, 0, 1500);
         plot2d("h2d_sigpts_ylds", mstop_, mlsp_, 1, SRVec.at(0).histMap, ";M_{stop} [GeV]; M_{lsp} [GeV]", mStopBins.size()-1, mStopBins.data(), mLSPBins.size()-1, mLSPBins.data());
-        // int nEventsPoint = h_sig_counter_nEvents->GetBinContent(h_sig_counter_nEvents->FindBin(mstop_, mlsp_));
-        // evtweight_ = kLumi * xsec() * 1000 / nEventsPoint;
         plot2d("h2d_sigpts_xsecwgtd", mstop_, mlsp_, evtweight_, SRVec.at(0).histMap, ";M_{stop} [GeV]; M_{lsp} [GeV]", 320, 100, 2100, 120, 0, 1500);
       } else if (mlsp_ > 0 && mstop_ > 0) {
         plot2d("h2d_sigpts_ylds", mstop_, mlsp_, 1, SRVec.at(0).histMap, ";M_{stop} [GeV]; M_{lsp} [GeV]", mStopBins.size()-1, mStopBins.data(), mLSPBins.size()-1, mLSPBins.data());
-        // plot2d("h2d_sigpts_xsecwgtd", mstop_, mlsp_, scale1fb(), SRVec.at(0).histMap, ";M_{stop} [GeV]; M_{lsp} [GeV]", 320, 100, 2100, 120, 0, 1500);
       }
 
       ++nPassedTotal;
@@ -370,7 +344,7 @@ void StopLooper::looper(TChain* chain, string samplestr, string output_dir, int 
       // Simple weight with scale1fb only
       // if (is_bkg_) evtweight_ = kLumi * scale1fb();
 
-      evtweight_ = 1;  // FIXME: find out how to get correct event weight
+      evtweight_ = 1;  // FIXME: find out how to get correct event weight later
 
       // Plot nvtxs on the base selection of stopbaby for reweighting purpose
       plot1d("h_nvtxs", PV_npvs(), 1, testVec[0].histMap, ";Number of primary vertices", 100, 1, 101);
@@ -391,29 +365,24 @@ void StopLooper::looper(TChain* chain, string samplestr, string output_dir, int 
           if (rawdisc > lead_deepdisc_top) lead_deepdisc_top = rawdisc;
         }
 
-        // TODO: get the DeepResolved score <-- can be run online
+        // TODO: get the DeepResolved score <-- Hard!!, ask for private NanoAOD from stop-0l!
         // lead_restopdisc = (topcands_disc().size())? topcands_disc()[0] : -1.1;
         // for (auto disc : tftops_disc()) {
         //   if (disc > lead_tftopdisc) lead_tftopdisc = disc;
         // }
-        // for (auto disc : jup_tftops_disc()) {
-        //   if (disc > lead_tftopdisc_jup) lead_tftopdisc_jup = disc;
-        // }
-        // for (auto disc : jdown_tftops_disc()) {
-        //   if (disc > lead_tftopdisc_jdown) lead_tftopdisc_jdown = disc;
-        // }
       }
 
-      // TODO: // Number of soft b-tags exlcuded from the leptons
-      // int nsboverlep = 0;
+      // Number of soft b-tags exlcuded from the leptons
+      int nsboverlep = 0;
+      // TODO: find out how to get collection of soft-b
       // for (auto sb : softtags_p4()) {
       //   if (nvetoleps() > 0 && isCloseObject(sb, lep1_p4(), 0.4)) nsboverlep++;
       //   if (nvetoleps() > 1 && isCloseObject(sb, lep2_p4(), 0.4)) nsboverlep++;
       // }
 
-      int nsoftbjets = 1;  // Temporary!
+      int nsoftbjets = 1;  // TODO: find out how to get collection of soft-b
 
-      // TODO: make the lepton objects first
+      // TODO: find out the correct branch for HEM veto
       // HEM issue for 2018, that excess of electron happens at -4.7 < eta < -1.4, -1.6 < phi < -0.8
       if (doHEMElectronVeto && gconf.year == 2018 && gconf.is_data && run() >= 319077) {
         // if (abs(lep2_pdgid()) == 11 && lep2_p4().eta() < -1.4 && lep2_p4().phi() > -1.6 && lep2_p4().phi() < -0.8)
@@ -443,37 +412,15 @@ void StopLooper::looper(TChain* chain, string samplestr, string output_dir, int 
       float MHT_pt = sumMHTp4.pt();
       float MHT_phi = sumMHTp4.phi();
 
+      // TODO: find correct collection for HT5/HT veto
       // float dphij1mht = (ngoodjets() > 0)? deltaPhi(ak4pfjets_p4().at(0).phi(), MHT_phi) : 9;
-      // if (babyver >= 31.2 && ngoodjets() > 0)
-      //   plot2d("h2d_ht5_dphijmht", dphij1mht, ak4_HTeta5()/ak4_HT(), 1, testVec[0].histMap, ";#Delta#phi(j1,MHT);HT5/HT", 16, 0, 3.2, 20, 1, 3);
-
       // if (doHT5cut && year_ >= 2017) {
       //   float HT5overHT = ak4_HTeta5() / ak4_HT();
       //   // if (dphij1mht < 5.3*HT5overHT - 4.78) continue;
       //   if (HT5overHT > 1.5) continue;
       // }
 
-      // TODO: // MET resolution stuff: recalculate MET using METObject
-      // METObject metobj;
-      // if (!gonf.is_data && runMETResCorrection) {
-      //   metobj.extras.met
-      //       = metobj.extras.met_METup = metobj.extras.met_METdn
-      //       = metobj.extras.met_JERup = metobj.extras.met_JERdn
-      //       = metobj.extras.met_PUup = metobj.extras.met_PUdn
-      //       = pfmet();
-      //   metobj.extras.met_JECup = pfmet_jup();
-      //   metobj.extras.met_JECdn = pfmet_jdown();
-      //   metobj.extras.phi
-      //       = metobj.extras.phi_METup = metobj.extras.phi_METdn
-      //       = metobj.extras.phi_JERup = metobj.extras.phi_JERdn
-      //       = metobj.extras.phi_PUup = metobj.extras.phi_PUdn
-      //       = pfmet_phi();
-      //   metobj.extras.phi_JECup = pfmet_phi_jup();
-      //   metobj.extras.phi_JECdn = pfmet_phi_jdown();
-      //   metCorrector.correctMET(genmet(), genmet_phi(), &metobj, is_fastsim_); // Last flag is for fast sim., but there are no separate factors, so it doesn't matter
-      // }
-
-      /*
+      // TODO: Update the values one by one
       // Filling the variables for analysis
       values_.clear();
       values_.resize(nvars, NAN);
@@ -481,18 +428,19 @@ void StopLooper::looper(TChain* chain, string samplestr, string output_dir, int 
       values_[mht] = MHT_pt;
       values_[mhtphi] = MHT_phi;
 
+      // TODO: get the correct branches
       /// Common variables for all JES type
-      values_[nlep] = ngoodleps();
-      values_[nvlep] = nvetoleps();
-      values_[lep1pt] = lep1_p4().pt();
-      values_[passvetos] = PassTrackVeto() && PassTauVeto();
-      values_[nvtx] = nvtxs();
-      values_[nlep_rl] = (ngoodleps() == 1 && nvetoleps() >= 2 && lep2_p4().Pt() > 10)? 2 : ngoodleps();
-      values_[mll] = (lep1_p4() + lep2_p4()).M();
+      // values_[nlep] = ngoodleps();
+      // values_[nvlep] = nvetoleps();
+      // values_[lep1pt] = lep1_p4().pt();
+      // values_[passvetos] = PassTrackVeto() && PassTauVeto();
+      // values_[nlep_rl] = (ngoodleps() == 1 && nvetoleps() >= 2 && lep2_p4().Pt() > 10)? 2 : ngoodleps();
+      // values_[mll] = (lep1_p4() + lep2_p4()).M();
+
+      values_[nvtx] = PV_npvsGood();
 
       // For toptagging, add correct switch later
-      values_[nak8jets] = ak8pfjets_deepdisc_top().size();
-      // values_[resttag] = lead_restopdisc;
+      values_[nak8jets] = nFatJet();
       values_[resttag] = lead_tftopdisc;
       values_[deepttag] = lead_deepdisc_top;
       values_[tfttag] = lead_tftopdisc;
@@ -500,33 +448,15 @@ void StopLooper::looper(TChain* chain, string samplestr, string output_dir, int 
       values_[binttag] = lead_bindisc_top;
       values_[nsblep] = nsboverlep;
 
-      // // Temporary to for no top-tagging result
-      // values_[deepttag] = 0;
-      // values_[tfttag] = 0;
-
-      if (runResTopMVA) {
-        // Prepare deep_cvsl vector
-        vector<float> ak4pfjets_dcvsl;
-        for (size_t j = 0; j < ak4pfjets_deepCSV().size(); ++j) {
-          ak4pfjets_dcvsl.push_back(ak4pfjets_deepCSVc().at(j) / (ak4pfjets_deepCSVc().at(j) + ak4pfjets_deepCSVl().at(j)));
-        }
-        resTopMVA->setJetVecPtrs(&ak4pfjets_p4(), &ak4pfjets_deepCSV(), &ak4pfjets_dcvsl, &ak4pfjets_ptD(), &ak4pfjets_axis1(), &ak4pfjets_mult());
-        std::vector<TopCand> topcands = resTopMVA->getTopCandidates(-1);
-        values_[resttag] = (topcands.size() > 0)? topcands[0].disc : -1.1;
-      }
-
-      // Temporary test for top tagging efficiency
-      // testTopTaggingEffficiency(testVec[1]);
-      // testGenMatching(testVec[0]);
-
       /// Values only for hist filling or testing
-      values_[chi2] = hadronic_top_chi2();
-      values_[lep1eta] = lep1_p4().eta();
-      values_[passlep1pt] = (abs(lep1_pdgid()) == 13 && lep1_p4().pt() > 40) || (abs(lep1_pdgid()) == 11 && lep1_p4().pt() > 45);
+      // values_[lep1eta] = lep1_p4().eta();
+      // values_[passlep1pt] = (abs(lep1_pdgid()) == 13 && lep1_p4().pt() > 40) || (abs(lep1_pdgid()) == 11 && lep1_p4().pt() > 45);
 
-      for (int systype = 0; systype < ((doSystVariations && !gconf.is_data)? 5 : 1); ++systype) {
+      // Loop over systematic types, only central for now
+      for (int systype = 0; systype < 1; ++systype) {
         string suffix = "";
 
+        /*
         /// JES type dependent variables
         if (systype == 0) {
           values_[mt] = mt_met_lep();
@@ -554,126 +484,14 @@ void StopLooper::looper(TChain* chain, string samplestr, string output_dir, int 
 
           jestype_ = 0;
           // suffix = "_nominal";
-        } else if (systype == 1) {
-          if (!applyMETResCorrection) continue;
-          if (samplever.find("v31") == 0) {  // available on and after v31_2
-            values_[mt] = mt_met_lep_resup();
-            values_[met] = pfmet_resup();
-            values_[tmod] = topnessMod_resup();
-            values_[dphijmet] = mindphi_met_j1_j2_resup();
-            values_[dphilmet] = lep1_dphiMET_resup();
-            values_[metphi] = pfmet_phi_resup();
-          } else if (runMETResCorrection) {
-            values_[met] = metobj.extras.met_METup;
-            values_[metphi] = metobj.extras.phi_METup;
-            values_[mt] = calculateMT(lep1_p4().pt(), lep1_p4().phi(), values_[met], values_[metphi]);
-            values_[dphilmet] = deltaPhi(lep1_p4().phi(), values_[metphi]);
-            values_[dphijmet] = (ngoodjets() > 1)? min2deltaPhi(values_[metphi], ak4pfjets_p4().at(0).phi(), ak4pfjets_p4().at(1).phi()) : -9;
-          }
-
-          suffix = "_metResUp";
-        } else if (systype == 2) {
-          if (!applyMETResCorrection) continue;
-          if (samplever.find("v31") == 0) {  // available on and after v31_2
-            values_[mt] = mt_met_lep_resdown();
-            values_[met] = pfmet_resdown();
-            values_[tmod] = topnessMod_resdown();
-            values_[dphijmet] = mindphi_met_j1_j2_resdown();
-            values_[dphilmet] = lep1_dphiMET_resdown();
-            values_[metphi] = pfmet_phi_resdown();
-          } else if (runMETResCorrection) {
-            values_[met] = metobj.extras.met_METdn;
-            values_[metphi] = metobj.extras.phi_METdn;
-            values_[mt] = calculateMT(lep1_p4().pt(), lep1_p4().phi(), values_[met], values_[metphi]);
-            values_[dphilmet] = deltaPhi(lep1_p4().phi(), values_[metphi]);
-            values_[dphijmet] = (ngoodjets() > 1)? min2deltaPhi(values_[metphi], ak4pfjets_p4().at(0).phi(), ak4pfjets_p4().at(1).phi()) : -9;
-          }
-
-          suffix = "_metResDn";
-        } else if (systype == 3) {
-          values_[mt] = mt_met_lep_jup();
-          values_[met] = pfmet_jup();
-          values_[mlb] = Mlb_closestb_jup();
-          values_[tmod] = topnessMod_jup();
-          values_[njet] = jup_ngoodjets();
-          values_[nbjet] = jup_ngoodbtags();
-          values_[ntbtag] = jup_ntightbtags();
-          values_[tfttag] = lead_tftopdisc_jup;
-          values_[dphijmet] = mindphi_met_j1_j2_jup();
-          values_[dphilmet] = deltaPhi(lep1_p4().phi(), pfmet_phi_jup());
-          values_[j1passbtag] = (jup_ngoodjets() > 0)? jup_ak4pfjets_passMEDbtag().at(0) : 0;
-
-          values_[jet1pt] = (jup_ngoodjets() > 0)? jup_ak4pfjets_p4().at(0).pt() : 0;
-          values_[jet2pt] = (jup_ngoodjets() > 1)? jup_ak4pfjets_p4().at(1).pt() : 0;
-          values_[jet1eta] = (jup_ngoodjets() > 0)? jup_ak4pfjets_p4().at(0).eta() : -9;
-          values_[jet2eta] = (jup_ngoodjets() > 1)? jup_ak4pfjets_p4().at(1).eta() : -9;
-
-          values_[metphi] = pfmet_phi_jup();
-          values_[nbtag] = jup_nanalysisbtags();
-          // values_[nsbtag] = (doTopTagging)? jup_nsoftbtags() - nsboverlep : 0;
-          values_[leadbpt] = jup_ak4pfjets_leadbtag_p4().pt();
-          values_[mlb_0b] = (jup_ak4pfjets_leadbtag_p4() + lep1_p4()).M();
-
-          jestype_ = 1;
-          suffix = "_jesUp";
-        } else if (systype == 4) {
-          values_[mt] = mt_met_lep_jdown();
-          values_[met] = pfmet_jdown();
-          values_[mlb] = Mlb_closestb_jdown();
-          values_[tmod] = topnessMod_jdown();
-          values_[njet] = jdown_ngoodjets();
-          values_[nbjet] = jdown_ngoodbtags();
-          values_[ntbtag] = jdown_ntightbtags();
-          values_[tfttag] = lead_tftopdisc_jdown;
-          values_[dphijmet] = mindphi_met_j1_j2_jdown();
-          values_[dphilmet] = deltaPhi(lep1_p4().phi(), pfmet_phi_jdown());
-          values_[j1passbtag] = (jdown_ngoodjets() > 0)? jdown_ak4pfjets_passMEDbtag().at(0) : 0;
-
-          values_[jet1pt] = (jdown_ngoodjets() > 0)? jdown_ak4pfjets_p4().at(0).pt() : 0;
-          values_[jet2pt] = (jdown_ngoodjets() > 1)? jdown_ak4pfjets_p4().at(1).pt() : 0;
-          values_[jet1eta] = (jdown_ngoodjets() > 0)? jdown_ak4pfjets_p4().at(0).eta() : -9;
-          values_[jet2eta] = (jdown_ngoodjets() > 1)? jdown_ak4pfjets_p4().at(1).eta() : -9;
-
-          values_[metphi] = pfmet_phi_jdown();
-          values_[nbtag] = jdown_nanalysisbtags();
-          // values_[nsbtag] = (doTopTagging)? jdown_nsoftbtags() - nsboverlep : 0;
-          values_[leadbpt] = jdown_ak4pfjets_leadbtag_p4().pt();
-          values_[mlb_0b] = (jdown_ak4pfjets_leadbtag_p4() + lep1_p4()).M();
-
-          jestype_ = 2;
-          suffix = "_jesDn";
         }
+
         /// should do the same job as nanalysisbtags
         values_[nbtag] = (values_[mlb] > 175)? values_[ntbtag] : values_[nbjet];
         values_[njettmod] = (values_[njet] >= 4 || values_[tmod] >= 10);
         values_[passlmetcor] = (values_[lep1pt] < 50) || (values_[lep1pt] < (250 - 100*values_[dphilmet]));
 
-        if (!gconf.is_data && runMETResCorrection) {
-          values_[met_rs] = metobj.extras.met;
-          values_[metphi_rs] = metobj.extras.phi;
-          values_[mt_rs] = calculateMT(lep1_p4().pt(), lep1_p4().phi(), metobj.extras.met, metobj.extras.phi);
-          values_[dphilmet_rs] = deltaPhi(lep1_p4().phi(), metobj.extras.phi);
-          values_[dphijmet_rs] = (ngoodjets() > 1)? min2deltaPhi(metobj.extras.phi, ak4pfjets_p4().at(0).phi(), ak4pfjets_p4().at(1).phi()) : -9;
-          if (applyMETResCorrection) {
-            values_[met] = values_[met_rs];
-            values_[metphi] = values_[metphi_rs];
-            values_[mt] = values_[mt_rs];
-            values_[dphilmet] = values_[dphilmet_rs];
-            values_[dphijmet] = values_[dphijmet_rs];
-          }
-        } else {
-          values_[met_rs] = values_[met];
-          values_[metphi_rs] = values_[metphi];
-          values_[mt_rs] = values_[mt];
-          values_[dphilmet_rs] = values_[dphilmet];
-          values_[dphijmet_rs] = values_[dphijmet];
-        }
-
-        // // Uncomment following lines if want to use CSV instead
-        // values_[nbtag] = (values_[mlb] > 175)? ntbtagCSV : nbtagCSV;
-        // values_[nbjet] = nbtagCSV;
-        // values_[ntbtag] = ntbtagCSV;
-
+        // TODO: focus on SR first
         // Filling histograms for SR
         fillHistosForSR(suffix);
 
@@ -687,103 +505,16 @@ void StopLooper::looper(TChain* chain, string samplestr, string output_dir, int 
           values_[dphijmet_rl]= mindphi_met_j1_j2_rl();
           values_[dphilmet_rl] = lep1_dphiMET_rl();
           values_[tmod_rl] = topnessMod_rl();
-        } else if (systype == 1 && values_[nlep_rl] > 1) {
-          if (samplever.find("v31")) {
-            values_[mt_rl] = mt_met_lep_rl_resup();
-            values_[mt2_ll] = (doTopTagging)? MT2_ll_resup() : 90;
-            values_[met_rl] = pfmet_rl_resup();
-            values_[tmod_rl] = topnessMod_rl_resup();
-            values_[dphijmet_rl] = mindphi_met_j1_j2_rl_resup();
-            values_[dphilmet_rl] = lep1_dphiMET_rl_resup();
-          } else if (runMETResCorrection) {
-            LorentzVector newmet(values_[met]*cos(values_[metphi]), values_[met]*sin(values_[metphi]), 0, values_[met]);
-            newmet += lep2_p4();
-            values_[met_rl] = newmet.pt();
-            values_[metphi_rl] = newmet.phi();
-            values_[mt_rl] = calculateMT(lep1_p4().pt(), lep1_p4().phi(), values_[met_rl], values_[metphi_rl]);
-            values_[dphilmet_rl] = deltaPhi(lep1_p4().phi(), values_[metphi_rl]);
-            values_[dphijmet_rl] = (ngoodjets() > 1)? min2deltaPhi(values_[metphi_rl], ak4pfjets_p4().at(0).phi(), ak4pfjets_p4().at(1).phi()) : -9;
-          }
-        } else if (systype == 2 && values_[nlep_rl] > 1) {
-          if (samplever.find("v31") == 0) {
-            values_[mt_rl] = mt_met_lep_rl_resdown();
-            values_[mt2_ll] = (doTopTagging)? MT2_ll_resdown() : 90;
-            values_[met_rl] = pfmet_rl_resdown();
-            values_[tmod_rl] = topnessMod_rl_resdown();
-            values_[dphijmet_rl] = mindphi_met_j1_j2_rl_resdown();
-            values_[dphilmet_rl] = lep1_dphiMET_rl_resdown();
-          } else if (runMETResCorrection) {
-            LorentzVector newmet(values_[met]*cos(values_[metphi]), values_[met]*sin(values_[metphi]), 0, values_[met]);
-            newmet += lep2_p4();
-            values_[met_rl] = newmet.pt();
-            values_[metphi_rl] = newmet.phi();
-            values_[mt_rl] = calculateMT(lep1_p4().pt(), lep1_p4().phi(), values_[met_rl], values_[metphi_rl]);
-            values_[dphilmet_rl] = deltaPhi(lep1_p4().phi(), values_[metphi_rl]);
-            values_[dphijmet_rl] = (ngoodjets() > 1)? min2deltaPhi(values_[metphi_rl], ak4pfjets_p4().at(0).phi(), ak4pfjets_p4().at(1).phi()) : -9;
-          }
-        } else if (jestype_ == 1) {
-          values_[mt_rl] = mt_met_lep_rl_jup();
-          values_[mt2_ll] = (doTopTagging)? MT2_ll_jup() : 90;
-          values_[met_rl] = pfmet_rl_jup();
-          values_[dphijmet_rl]= mindphi_met_j1_j2_rl_jup();
-          values_[dphilmet_rl] = lep1_dphiMET_rl_jup();
-          values_[tmod_rl] = topnessMod_rl_jup();
-        } else if (jestype_ == 2) {
-          values_[mt_rl] = mt_met_lep_rl_jdown();
-          values_[mt2_ll] = (doTopTagging)? MT2_ll_jdown() : 90;
-          values_[met_rl] = pfmet_rl_jdown();
-          values_[dphijmet_rl]= mindphi_met_j1_j2_rl_jdown();
-          values_[dphilmet_rl] = lep1_dphiMET_rl_jdown();
-          values_[tmod_rl] = topnessMod_rl_jdown();
         }
         values_[passlmet_rl] = (values_[lep1pt] < 50) || (values_[lep1pt] < (250 - 100*values_[dphilmet_rl]));
-
-        if (!gconf.is_data && runMETResCorrection && applyMETResCorrection && values_[nlep_rl] > 1) {
-          LorentzVector newmet(metobj.extras.met*cos(metobj.extras.phi), metobj.extras.met*sin(metobj.extras.phi), 0, metobj.extras.met);
-          newmet += lep2_p4();
-          values_[met_rl] = newmet.pt();
-          values_[metphi_rl] = newmet.phi();
-          values_[mt_rl] = calculateMT(lep1_p4().pt(), lep1_p4().phi(), values_[met_rl], values_[metphi_rl]);
-          values_[dphilmet_rl] = deltaPhi(lep1_p4().phi(), values_[metphi_rl]);
-          values_[dphijmet_rl] = (ngoodjets() > 1)? min2deltaPhi(values_[metphi_rl], ak4pfjets_p4().at(0).phi(), ak4pfjets_p4().at(1).phi()) : -9;
-        }
 
         fillHistosForCRemu(suffix);
 
         fillHistosForCR2l(suffix);
-
-        if (systype == 0)
-          testCutFlowHistos(testVec[2]);
-        // fillTopTaggingHistos(suffix);
-
-        // Also do yield using genmet for fastsim samples <-- under development
-        if (is_fastsim_ && systype == 0 && babyver >= 31.4) {
-          values_[met] = genmet();
-          values_[mt] = mt_genmet_lep();
-          values_[tmod] = topnessMod_genmet();
-          values_[dphijmet] = mindphi_genmet_j1_j2();
-          values_[dphilmet] = lep1_dphiGenMET();
-          values_[passlmetcor] = (values_[lep1pt] < 50) || (values_[lep1pt] < (250 - 100*values_[dphilmet]));
-
-          values_[met_rl] = genmet();
-          values_[mt2_ll] = MT2_ll_genmet();
-          values_[mt_rl] = mt_genmet_lep();
-          values_[tmod_rl] = topnessMod_genmet();
-          values_[dphijmet_rl] = mindphi_genmet_j1_j2();
-          values_[dphilmet_rl] = lep1_dphiGenMET();
-          values_[passlmet_rl] = (values_[lep1pt] < 50) || (values_[lep1pt] < (250 - 100*values_[dphilmet_rl]));
-
-          fillHistosForSR("_genmet");
-          fillHistosForCR0b("_genmet");
-          fillHistosForCR2l("_genmet");
-          // fillHistosForSR("");
-          // fillHistosForCR0b("");
-          // fillHistosForCR2l("");
-        }
-
-      }  // end of jes variation
-
       */
+
+      }  // end of systype variation
+
     } // end of event loop
 
 
@@ -843,7 +574,6 @@ void StopLooper::looper(TChain* chain, string samplestr, string output_dir, int 
 
   outfile_->Write();
   outfile_->Close();
-  if (printPassedEvents) ofile.close();
 
   bmark->Stop("benchmark");
   cout << endl;
@@ -870,10 +600,6 @@ void StopLooper::fillYieldHistos(SR& sr, float met, string suf, bool is_cr2l) {
   // FIXME: evtweight_ = evtWgt.getWeight(evtWgtInfo::systID(jestype_), is_cr2l, cortype);
   evtweight_ = 1;
 
-  // if (doNvtxReweight) {
-  //   if (PV_npvs() < 100) evtweight_ *= nvtxscale_[PV_npvs()];  // only scale for data
-  // }
-
   if (evtweight_ == 0) cout << "[StopLooper::fillYieldHistos]: WARNING: the event weight is 0 at evt = " << event() << "!!\n";
   if (isnan(evtweight_)) {
     cout << "[StopLooper::fillYieldHistos]: WARNING: the event weight is NAN!! Skipping!" << ", SR=" << srname << endl;
@@ -888,7 +614,7 @@ void StopLooper::fillYieldHistos(SR& sr, float met, string suf, bool is_cr2l) {
       plot1d("h_metbins"+s+suf, met, evtweight_, sr.histMap, (sr.GetName()+":"+sr.GetDetailName()+";E^{miss}_{T} [GeV]").c_str(),
              sr.GetNMETBins(), sr.GetMETBinsPtr());
 
-    // TODO: systematic variation 
+    // TODO: low priority: systematic variation 
     // if (doSystVariations && (is_bkg_ || (is_fastsim_ && filldim == 3)) && suf == "") {
     //   // Only run once when filling for nominal. JES or METRes variation dealt with above. No need for signals?
     //   for (int isyst = 3; isyst < evtWgtInfo::k_nSyst; ++isyst) {
@@ -916,7 +642,7 @@ void StopLooper::fillYieldHistos(SR& sr, float met, string suf, bool is_cr2l) {
   fillhists("", (is_fastsim_)? 3 : 1);
   if (!is_fastsim_ && mlsp_ > 0 && mstop_ > 0) fillhists("", 3);  // for fullsim signal
 
-  // TODO: gen category
+  // TODO: low priority: gen category
   // if (doGenClassification && is_bkg_) {
   //   // Only fill gen classification for background events, used for background estimation
   //   if (isZtoNuNu()) fillhists("_Znunu");
@@ -926,17 +652,10 @@ void StopLooper::fillYieldHistos(SR& sr, float met, string suf, bool is_cr2l) {
   //   else fillhists("_unclass");  // either unclassified 1lep or 0lep, or something else unknown, shouldn't have (m)any
   // }
 
-  // Block for debugging, active when setting printPassedEvents = true
-  if (printPassedEvents && met > 750 && suf == "" && sr.GetName().find("sr") == 0) {
-    ofile << run() << ' ' << luminosityBlock() << ' ' << event() << ' ' << sr.GetName();
-    ofile << ": values_[met]= " << values_[Vars::met] << ", values_[mt]= " << values_[mt] << ", values_[njet]= " << values_[njet] << ", values_[nbjet] = " << values_[nbjet]  << ", values_[tmod]= " << values_[tmod] << ", values_[mlb]= " << values_[mlb];
-    ofile << endl;
-  }
 }
 
 void StopLooper::fillHistosForSR(string suf) {
 
-  /*
   // Trigger requirements
   if (gconf.is_data && !PassingHLTriggers()) return;
 
@@ -979,7 +698,6 @@ void StopLooper::fillHistosForSR(string suf) {
         plot1d("h_nsblep"+s,   values_[nsblep]  , evtweight_, sr.histMap, ";Number of soft b overlap lep"  ,  5,  0, 5);
       }
 
-      // if ( (HLT_SingleEl() && abs(lep1_pdgid()) == 11 && values_[lep1pt] < 45) || (HLT_SingleMu() && abs(lep1_pdgid()) == 13 && values_[lep1pt] < 40) || (HLT_MET_MHT() && pfmet() > 250) ) {
       if (true) {
         plot1d("h_mt_h"+s,       values_[mt]       , evtweight_, sr.histMap, ";M_{T} [GeV]"                   , 24,   0, 600);
         plot1d("h_met_h"+s,      values_[met]      , evtweight_, sr.histMap, ";E_{T}^{miss} [GeV]"            , 32,  50, 850);
@@ -993,32 +711,23 @@ void StopLooper::fillHistosForSR(string suf) {
       plot1d("h_jet1eta"+s, values_[jet1eta], evtweight_, sr.histMap, ";#eta(jet1) [GeV]"   , 30,  -3,  3);
       plot1d("h_jet2eta"+s, values_[jet2eta], evtweight_, sr.histMap, ";#eta(jet2) [GeV]"   , 60,  -3,  3);
 
-      if (suf == "" && babyver >= 31.2 && ngoodjets() > 0) {
-        plot2d("h2d_ht5_dphijmht", deltaPhi(ak4pfjets_p4().at(0).phi(), values_[mhtphi]), ak4_HTeta5()/ak4_HT(), evtweight_, sr.histMap, ";#Delta#phi(j1,MHT);HT5/HT", 64, 0, 3.2, 80, 1, 3);
-        plot1d("h_ht5overht", ak4_HTeta5()/ak4_HT(), evtweight_, sr.histMap, ";HT5/HT", 80, 1, 3);
-      }
-      for (auto sb : softtags_p4()) {
-        plot1d("h_softbs_pt"+s, sb.pt() , evtweight_, sr.histMap, ";p_{T} (soft b)",  20,  0, 20);
-      }
     };
 
     if (suf == "") fillKineHists(suf);
-    if (is_fastsim_ && suf == "" && (checkMassPt(1050, 100) || checkMassPt(900, 500) || checkMassPt(950, 100) || checkMassPt(425, 325) ||
-                                     checkMassPt(1000, 100) || checkMassPt(800, 450) || checkMassPt(750, 400) ||
-                                     checkMassPt(1200, 100) || checkMassPt(850, 100) || checkMassPt(650, 350)))
+    if (is_fastsim_ && suf == "" && ( checkMassPt(1200, 100) || checkMassPt(850, 100) || checkMassPt(650, 350)))
       fillKineHists(Form("%s_%d_%d%s", sigtype.c_str(), mstop_, mlsp_, suf.c_str()));
 
-    // Separate contribution by gen classification for background events
-    if (doGenClassification && is_bkg_ && suf == "") {
-      if (isZtoNuNu()) fillKineHists("_Znunu");
-      else if (is2lep()) fillKineHists("_2lep");
-      else if (is1lepFromW()) fillKineHists("_1lepW");
-      else if (is1lepFromTop()) fillKineHists("_1lepTop");
-      else fillKineHists("_unclass");  // either unclassified 1lep or 0lep, or something else unknown, shouldn't have (m)any
-    }
+    // TODO: find a way to decide the gen categories
+    // // Separate contribution by gen classification for background events
+    // if (doGenClassification && is_bkg_ && suf == "") {
+    //   if (isZtoNuNu()) fillKineHists("_Znunu");
+    //   else if (is2lep()) fillKineHists("_2lep");
+    //   else if (is1lepFromW()) fillKineHists("_1lepW");
+    //   else if (is1lepFromTop()) fillKineHists("_1lepTop");
+    //   else fillKineHists("_unclass");  // either unclassified 1lep or 0lep, or something else unknown, shouldn't have (m)any
+    // }
 
   }
-  */
 
 }
 
@@ -1214,10 +923,6 @@ void StopLooper::fillHistosForCR0b(string suf) {
         plot1d("h_mhtovermet"+s, values_[mht]/values_[met], evtweight_, cr.histMap, ";H_{T}^{miss}/E_{T}^{miss}{miss}"  , 40, 0, 4);
         plot1d("h_diffmhtmet"+s, fabs(values_[mht]-values_[met])/values_[met], evtweight_, cr.histMap, ";#Delta(H_{T}^{miss}, E_{T}^{miss}{miss})/E_{T}^{miss}{miss}"   , 40, 0, 1);
       }
-      if (suf == "" && babyver >= 31.2 && ngoodjets() > 0) {
-        plot2d("h2d_ht5_dphijmht", deltaPhi(ak4pfjets_p4().at(0).phi(), values_[mhtphi]), ak4_HTeta5()/ak4_HT(), evtweight_, cr.histMap, ";#Delta#phi(j1,MHT);HT5/HT", 64, 0, 3.2, 80, 1, 3);
-        plot1d("h_ht5overht", ak4_HTeta5()/ak4_HT(), evtweight_, cr.histMap, ";HT5/HT", 80, 1, 3);
-      }
     };
     if (suf == "") fillKineHists(suf);
     if (is_fastsim_ && suf == "" && (checkMassPt(1200, 50) || checkMassPt(800, 400) || checkMassPt(800, 675)))
@@ -1232,10 +937,6 @@ void StopLooper::fillHistosForCR0b(string suf) {
       else fillKineHists("_unclass");  // either unclassified 1lep or 0lep, or something else unknown, shouldn't have (m)any
     }
 
-    if (suf == "" && babyver >= 31.2 && ngoodjets() > 0) {
-      plot2d("h2d_ht5_dphijmht", deltaPhi(ak4pfjets_p4().at(0).phi(), values_[mhtphi]), ak4_HTeta5()/ak4_HT(), evtweight_, cr.histMap, ";#Delta#phi(j1,MHT);HT5/HT", 32, 0, 3.2, 40, 1, 3);
-      plot1d("h_ht5overht", ak4_HTeta5()/ak4_HT(), evtweight_, cr.histMap, ";HT5/HT", 80, 1, 3);
-    }
   }*/
 }
 
